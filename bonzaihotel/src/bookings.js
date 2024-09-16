@@ -10,4 +10,14 @@ const { initExpress } = require('../initializers/initExpress');
 
 const app = initExpress();
 
+app.post('/bookings', async (req, res) => {
+  // orderId: uuid,
+  // roomId: roomId,
+  // days: number
+  // checkIn: date
+  // checkOut: date
+  // sum: number (days + roomPrice)
+  // clientName: string
+});
+
 exports.handler = serverless(app);
