@@ -1,0 +1,72 @@
+# "org" ensures this Service is used with the correct Serverless Framework Access Key.
+org: marresshserverless
+# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
+app: bonzai
+# "service" is the name of this project. This will also be added to your AWS resource names.
+service: bonzaihotel
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: eu-north-1
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - !Sub arn:aws:dynamodb:${self:provider.region}:${aws:accountId}:table/${self:custom.roomsTable}
+            - !Sub arn:aws:dynamodb:${self:provider.region}:${aws:accountId}:table/${self:custom.bookingsTable}
+
+  environment:
+    ROOMS_TABLE: ${self:custom.roomsTable}
+    BOOKINGS_TABLE: ${self:custom.bookingsTable}
+
+functions:
+  roomsApi:
+    handler: src/rooms.handler
+    events:
+      - httpApi:
+          path: /rooms/{proxy+}
+          method: ANY
+  bookingsApi:
+    handler: src/bookings.handler
+    events:
+      - httpApi:
+          path: /bookings/{proxy+}
+          method: ANY
+
+resources:
+  Resources:
+    RoomsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:custom.roomsTable}
+    BookingsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:custom.bookingsTable}
+
+custom:
+  roomsTable: rooms
+  bookingsTable: bookings
