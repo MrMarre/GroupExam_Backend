@@ -54,4 +54,5 @@ app.get("/rooms", async (req, res) => {
     res.status(500).json({ msg: error.message });
   }
 });
+
 exports.handler = serverless(app);

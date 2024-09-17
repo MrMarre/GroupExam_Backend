@@ -3,6 +3,7 @@ const {
   GetCommand,
   PutCommand,
   UpdateCommand,
+  DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const serverless = require('serverless-http');
 const { v4: uuid } = require('uuid');
@@ -55,6 +56,27 @@ app.post('/bookings/:roomId', async (req, res) => {
     const command = new PutCommand(params);
     await docClient.send(command);
     res.status(200).json({ msg: 'Room booked successfully', result: order });
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
+
+//DELETE BOOKING
+app.delete('/bookings/:roomId', async (req, res) => {
+  const { roomId } = req.params;
+
+  try {
+    const params = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id: roomId },
+    };
+
+    const deleteCommand = new DeleteCommand(params);
+    await docClient.send(deleteCommand);
+
+    res
+      .status(200)
+      .json({ msg: `Booking ${roomId} deleted successfully` });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
