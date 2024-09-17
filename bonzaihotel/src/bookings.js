@@ -3,6 +3,7 @@ const {
   GetCommand,
   PutCommand,
   UpdateCommand,
+  DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const serverless = require('serverless-http');
 const { v4: uuid } = require('uuid');
@@ -89,6 +90,55 @@ app.post('/bookings/:roomId', async (req, res) => {
       orderId: order.id,
       roomId: roomId,
     });
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
+
+//DELETE BOOKING
+app.delete('/bookings/:roomId', async (req, res) => {
+  const { roomId } = req.params;
+
+  //Retrieving CheckIn date
+  try {
+    const getParams = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id: roomId },
+    };
+
+    const getCommand = new GetCommand(getParams);
+    const booking = await docClient.send(getCommand);
+
+    //break if roomId dont exist in db
+    if (!booking.Item) {
+      return res.status(404).json({ msg: 'No booking found with that roomId' });
+    }
+
+
+    const checkInDate = new Date(booking.Item.checkIn);
+    //Making new date to compare checkIn date
+    const currentDate = new Date();
+    //Calculate diffrence
+    const timeDifference = checkInDate.getTime() - currentDate.getTime();
+    const daysDifference = timeDifference / (1000 * 3600 * 24);
+
+    //Break if the diffrence is less then 2 days
+    if (daysDifference <= 2) {
+      return res.status(400).json({
+        msg: 'You cannot delete this booking. The check-in date is within 2 days.',
+      });
+    }
+    
+    //Procced if the diffrence is more then 2 days and Delete
+    const deleteParams = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id: roomId },
+    };
+
+    const deleteCommand = new DeleteCommand(deleteParams);
+    await docClient.send(deleteCommand);
+
+    res.status(200).json({ msg: `Booking ${roomId} deleted successfully` });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
