@@ -1,16 +1,17 @@
-const { docClient } = require('../initializers/dynamo');
+const { docClient } = require("../initializers/dynamo");
 const {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} = require('@aws-sdk/lib-dynamodb');
-const serverless = require('serverless-http');
-const { v4: uuid } = require('uuid');
-const { initExpress } = require('../initializers/initExpress');
+  ScanCommand,
+} = require("@aws-sdk/lib-dynamodb");
+const serverless = require("serverless-http");
+const { v4: uuid } = require("uuid");
+const { initExpress } = require("../initializers/initExpress");
 const ROOMS_TABLE = process.env.ROOMS_TABLE;
 const app = initExpress();
 
-app.post('/rooms', async (req, res) => {
+app.post("/rooms", async (req, res) => {
   const { room, guests, price } = req.body;
 
   const params = {
@@ -23,10 +24,10 @@ app.post('/rooms', async (req, res) => {
       available: true,
     },
   };
-  if (room == '' || guests == '' || price == '') {
+  if (room == "" || guests == "" || price == "") {
     return res
       .status(404)
-      .json({ msg: 'The field room, guests, and price is required' });
+      .json({ msg: "The field room, guests, and price is required" });
   }
 
   try {
@@ -38,10 +39,19 @@ app.post('/rooms', async (req, res) => {
   }
 });
 
-// id: uuid --> roomId
-// room: single/double/suite
-// guests: 1-3
-// price: 500/1000/1500
-// available: BOOL
-//
+app.get("/rooms", async (req, res) => {
+  const params = {
+    TableName: ROOMS_TABLE,
+  };
+
+  try {
+    const command = new ScanCommand(params);
+    const { Items } = await docClient.send(command);
+    if (Items) {
+      res.status(200).json(Items);
+    }
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
 exports.handler = serverless(app);
