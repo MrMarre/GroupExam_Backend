@@ -1,21 +1,21 @@
-const { docClient } = require('../initializers/dynamo');
+const { docClient } = require("../initializers/dynamo");
 const {
   GetCommand,
   PutCommand,
   UpdateCommand,
   DeleteCommand,
-} = require('@aws-sdk/lib-dynamodb');
-const serverless = require('serverless-http');
-const { v4: uuid } = require('uuid');
-const { initExpress } = require('../initializers/initExpress');
-const { calculateDateDifference } = require('../functions/dateHelper');
+} = require("@aws-sdk/lib-dynamodb");
+const serverless = require("serverless-http");
+const { v4: uuid } = require("uuid");
+const { initExpress } = require("../initializers/initExpress");
+const { calculateDateDifference } = require("../functions/dateHelper");
 
 const BOOKINGS_TABLE = process.env.BOOKINGS_TABLE;
 const ROOMS_TABLE = process.env.ROOMS_TABLE;
 
 const app = initExpress();
 
-app.post('/bookings/:roomId', async (req, res) => {
+app.post("/bookings/:roomId", async (req, res) => {
   const body = req.body;
   const { roomId } = req.params;
   const checkIn = new Date(body.checkIn);
@@ -30,29 +30,28 @@ app.post('/bookings/:roomId', async (req, res) => {
   const roomCommand = new GetCommand(roomParams);
   const foundRoom = await docClient.send(roomCommand);
 
-
   if (!foundRoom.Item) {
-    return res.status(404).json({ msg: 'No room found with that id' });
+    return res.status(404).json({ msg: "No room found with that id" });
   }
 
   const controlGuestAmount = (guests) => {
     let maxGuests;
     switch (foundRoom.Item.room) {
-      case 'single':
+      case "single":
         maxGuests = 1;
         break;
-      case 'double':
+      case "double":
         maxGuests = 2;
         break;
-      case 'suite':
+      case "suite":
         maxGuests = 3;
         break;
       default:
         maxGuests = 1;
-  }
-  if (guests > maxGuests) {
-  throw new Error(`Too many guests. Maximum allowed is ${maxGuests}`);
-  }
+    }
+    if (guests > maxGuests) {
+      throw new Error(`Too many guests. Maximum allowed is ${maxGuests}`);
+    }
   };
 
   const days = calculateDateDifference(checkIn, checkOut);
@@ -82,9 +81,9 @@ app.post('/bookings/:roomId', async (req, res) => {
     const updateRoomParams = {
       TableName: ROOMS_TABLE,
       Key: { id: roomId },
-      UpdateExpression: 'SET available = :available',
+      UpdateExpression: "SET available = :available",
       ExpressionAttributeValues: {
-        ':available': false,
+        ":available": false,
       },
     };
 
@@ -92,18 +91,17 @@ app.post('/bookings/:roomId', async (req, res) => {
     await docClient.send(updateRoomCommand);
 
     res.status(200).json({
-      msg: 'Room booked successfully',
+      msg: "Room booked successfully",
       orderId: order.id,
       roomId: roomId,
     });
-
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
 });
 
 // DELETE BOOKING
-app.delete('/bookings/:orderId', async (req, res) => {
+app.delete("/bookings/:orderId", async (req, res) => {
   const { orderId } = req.params;
 
   try {
@@ -117,7 +115,9 @@ app.delete('/bookings/:orderId', async (req, res) => {
     const booking = await docClient.send(getCommand);
 
     if (!booking.Item) {
-      return res.status(404).json({ msg: 'No booking found with that orderId', orderId });
+      return res
+        .status(404)
+        .json({ msg: "No booking found with that orderId", orderId });
     }
 
     const checkInDate = new Date(booking.Item.checkIn);
@@ -127,11 +127,11 @@ app.delete('/bookings/:orderId', async (req, res) => {
 
     if (daysDifference <= 2) {
       return res.status(400).json({
-        msg: 'You cannot delete this booking. The check-in date is within 2 days.',
+        msg: "You cannot delete this booking. The check-in date is within 2 days.",
       });
     }
-    const updateParams = booking.Item.roomId
-  
+    const updateParams = booking.Item.roomId;
+
     // Delete booking
     const deleteParams = {
       TableName: BOOKINGS_TABLE,
@@ -140,23 +140,45 @@ app.delete('/bookings/:orderId', async (req, res) => {
     const deleteCommand = new DeleteCommand(deleteParams);
     await docClient.send(deleteCommand);
 
-
     // Update room availability to true
     const updateRoomParams = {
       TableName: ROOMS_TABLE,
       Key: { id: updateParams },
-      UpdateExpression: 'SET available = :available',
+      UpdateExpression: "SET available = :available",
       ExpressionAttributeValues: {
-        ':available': true,
+        ":available": true,
       },
     };
 
     const updateRoomCommand = new UpdateCommand(updateRoomParams);
     await docClient.send(updateRoomCommand);
 
-    res.status(200).json({ msg: `Booking ${updateParams} deleted successfully` });
+    res
+      .status(200)
+      .json({ msg: `Booking ${updateParams} deleted successfully` });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
 });
+
+app.get("/bookings/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const params = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id },
+    };
+
+    const command = new GetCommand(params);
+    const { Item: bookingInfo } = await docClient.send(command);
+    if (bookingInfo) {
+      res.status(200).json({ bookingid: id, bookingInfo });
+    } else {
+      res.status(404).json({ msg: "Booking not found" });
+    }
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
+
 exports.handler = serverless(app);
