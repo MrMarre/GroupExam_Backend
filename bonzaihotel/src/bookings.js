@@ -24,7 +24,7 @@ app.post("/bookings", async (req, res) => {
     const orders = [];
 
     for (const booking of bookings) {
-      const { roomId, checkIn, checkOut, clientName, guests } = booking;
+      const { roomId, checkIn, checkOut, clientName, guests, epost } = booking;
 
       const roomParams = {
         TableName: ROOMS_TABLE,
@@ -74,6 +74,7 @@ app.post("/bookings", async (req, res) => {
         checkIn: checkInDate.toISOString(),
         checkOut: checkOutDate.toISOString(),
         sum: sum,
+        epost: epost,
         clientName: clientName,
         guests: guests,
       };
@@ -111,8 +112,14 @@ app.post("/bookings", async (req, res) => {
     res.status(200).json({
       msg: "Rooms booked successfully",
       orders: orders.map((order) => ({
+        clientName: order.clientName,
+        sum: order.sum,
+        guests: order.guests,
+        epost: order.epost,
         orderId: order.id,
         roomId: order.roomId,
+        checkIn: order.checkIn,
+        checkOut: order.checkOut
       })),
     });
   } catch (error) {
