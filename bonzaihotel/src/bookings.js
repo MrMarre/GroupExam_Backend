@@ -4,7 +4,6 @@ const {
   PutCommand,
   UpdateCommand,
   DeleteCommand,
-  BatchWriteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const serverless = require('serverless-http');
 const { v4: uuid } = require('uuid');
@@ -92,9 +91,7 @@ app.post('/bookings', async (req, res) => {
     for (const room of roomsInfo) {
       const updateRoomParams = {
         TableName: ROOMS_TABLE,
-
         Key: { id: room.roomId },
-
         UpdateExpression: 'SET available = :available',
         ExpressionAttributeValues: {
           ':available': false,
@@ -126,10 +123,8 @@ app.post('/bookings', async (req, res) => {
     await docClient.send(putCommand);
 
     res.status(200).json({
-
       msg: 'Rooms booked successfully under one booking',
       bookingId: bookingId,
-
       totalSum: totalSum,
       rooms: roomsInfo,
     });
@@ -264,7 +259,7 @@ app.put('/bookings/:id', async (req, res) => {
     };
 
     controlGuestAmount(guests);
-    
+
     const params = {
       TableName: BOOKINGS_TABLE,
       Key: { id: id },
