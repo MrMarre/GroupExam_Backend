@@ -157,7 +157,6 @@ app.delete("/bookings/:bookingId", async (req, res) => {
     if (!booking.Item) {
       return res
         .status(404)
- update
         .json({ msg: 'No booking found with that bookingId', bookingId });
     }
 
