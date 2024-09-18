@@ -124,6 +124,7 @@ app.post('/bookings', async (req, res) => {
 
     res.status(200).json({
       msg: 'Rooms booked successfully under one booking',
+      clientName: clientName,
       bookingId: bookingId,
       totalSum: totalSum,
       rooms: roomsInfo,
