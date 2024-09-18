@@ -21,6 +21,7 @@ app.post("/bookings", async (req, res) => {
   const { bookings } = body; // Expect an array of booking details (roomId, checkIn, checkOut, etc.)
 
   try {
+    
     const orders = [];
 
     for (const booking of bookings) {
@@ -36,6 +37,10 @@ app.post("/bookings", async (req, res) => {
 
       if (!foundRoom.Item) {
         throw new Error(`No room found with id: ${roomId}`);
+      }
+
+      if (foundRoom.Item.available == false) {
+        throw new Error(`The room with this id:${roomId} is not available`);
       }
 
       const controlGuestAmount = (guests) => {
@@ -101,7 +106,7 @@ app.post("/bookings", async (req, res) => {
         [BOOKINGS_TABLE]: orders.map((order) => ({
           PutRequest: {
             Item: order,
-          },
+          }, 
         })),
       },
     };
