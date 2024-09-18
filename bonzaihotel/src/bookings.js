@@ -139,10 +139,8 @@ app.post('/bookings', async (req, res) => {
 });
 
 // DELETE BOOKING
-
 app.delete("/bookings/:bookingId", async (req, res) => {
   const { bookingId } = req.params;
-
 
   try {
     // Retrieve the booking details
@@ -170,9 +168,10 @@ app.delete("/bookings/:bookingId", async (req, res) => {
         msg: 'You cannot delete this booking. The check-in date is within 2 days.',
       });
     }
+    
+    // Update room availability to true
     const bookedRooms = booking.Item.rooms;
 
-    // Update room availability to true
     for (const room of bookedRooms) {
       const updateRoomParams = {
         TableName: ROOMS_TABLE,
@@ -193,9 +192,7 @@ app.delete("/bookings/:bookingId", async (req, res) => {
     const deleteCommand = new DeleteCommand(deleteParams);
     await docClient.send(deleteCommand);
 
-    res
-      .status(200)
-      .json({ msg: `Booking ${bookingId} deleted successfully` });
+    res.status(200).json({ msg: `Booking ${bookingId} deleted successfully` });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
@@ -258,13 +255,16 @@ app.put('/bookings/:id', async (req, res) => {
         default:
           maxGuests = 1;
       }
+
       if (guests > maxGuests) {
         throw new Error(
           `Too many guests for room id ${roomId}. Maximum allowed is ${maxGuests}`
         );
       }
     };
+
     controlGuestAmount(guests);
+    
     const params = {
       TableName: BOOKINGS_TABLE,
       Key: { id: id },
