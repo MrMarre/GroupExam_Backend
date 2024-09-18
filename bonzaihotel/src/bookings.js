@@ -112,8 +112,14 @@ app.post("/bookings", async (req, res) => {
     res.status(200).json({
       msg: "Rooms booked successfully",
       orders: orders.map((order) => ({
+        clientName: order.clientName,
+        sum: order.sum,
+        guests: order.guests,
+        epost: order.epost,
         orderId: order.id,
         roomId: order.roomId,
+        checkIn: order.checkIn,
+        checkOut: order.checkOut
       })),
     });
   } catch (error) {
