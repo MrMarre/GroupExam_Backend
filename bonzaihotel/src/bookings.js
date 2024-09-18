@@ -16,17 +16,19 @@ const ROOMS_TABLE = process.env.ROOMS_TABLE;
 
 const app = initExpress();
 
-app.post("/bookings", async (req, res) => {
+app.post('/bookings', async (req, res) => {
   const body = req.body;
-  const { bookings } = body; // Expect an array of booking details (roomId, checkIn, checkOut, etc.)
+  const { bookings } = body;
 
   try {
     let totalSum = 0;
-    const orders = [];
+    const roomsInfo = [];
+    const clientName = bookings[0].clientName;
+    const epost = bookings[0].epost;
 
     // First phase: validation for all bookings
     for (const booking of bookings) {
-      const { roomId, checkIn, checkOut, clientName, guests, epost } = booking;
+      const { roomId, checkIn, checkOut, guests } = booking;
 
       const roomParams = {
         TableName: ROOMS_TABLE,
@@ -44,16 +46,17 @@ app.post("/bookings", async (req, res) => {
         throw new Error(`The room with id: ${roomId} is not available`);
       }
 
+      // Validate guest amount
       const controlGuestAmount = (guests) => {
         let maxGuests;
         switch (foundRoom.Item.room) {
-          case "single":
+          case 'single':
             maxGuests = 1;
             break;
-          case "double":
+          case 'double':
             maxGuests = 2;
             break;
-          case "suite":
+          case 'suite':
             maxGuests = 3;
             break;
           default:
@@ -73,65 +76,58 @@ app.post("/bookings", async (req, res) => {
       const days = calculateDateDifference(checkInDate, checkOutDate);
       const sum = Number(foundRoom.Item.price) * days;
       totalSum += sum;
-      // Prepare the order but don't save yet
-      const order = {
-        id: uuid(),
+
+      // Store room details in the booking
+      roomsInfo.push({
         roomId: roomId,
-        days: days,
+        roomType: foundRoom.Item.room,
+        guests: guests,
         checkIn: checkInDate.toISOString(),
         checkOut: checkOutDate.toISOString(),
         sum: sum,
-        epost: epost,
-        clientName: clientName,
-        guests: guests,
-      };
-
-      orders.push(order); // Collect all valid orders
+      });
     }
 
-    //If all validations passed, update room availability and book the rooms
-    for (const order of orders) {
-      // Update the room availability
+    // Update room availability for all rooms
+    for (const room of roomsInfo) {
       const updateRoomParams = {
         TableName: ROOMS_TABLE,
-        Key: { id: order.roomId },
-        UpdateExpression: "SET available = :available",
+        Key: { id: room.roomId },
+        UpdateExpression: 'SET available = :available',
         ExpressionAttributeValues: {
-          ":available": false,
+          ':available': false,
         },
       };
 
       const updateRoomCommand = new UpdateCommand(updateRoomParams);
-      await docClient.send(updateRoomCommand); // Now update room availability
+      await docClient.send(updateRoomCommand);
     }
 
-    // Batch write all orders at once using BatchWriteCommand
-    const bookingParams = {
-      RequestItems: {
-        [BOOKINGS_TABLE]: orders.map((order) => ({
-          PutRequest: {
-            Item: order,
-          },
-        })),
-      },
+    // Create one booking entry with multiple rooms
+    const bookingId = uuid();
+    const bookingEntry = {
+      id: bookingId,
+      clientName: clientName,
+      epost: epost,
+      totalSum: totalSum,
+      rooms: roomsInfo,
+      bookingDate: new Date().toISOString(),
     };
 
-    const batchWriteCommand = new BatchWriteCommand(bookingParams);
-    await docClient.send(batchWriteCommand); // Use docClient.send for BatchWriteCommand
+    // Save the booking to the BOOKINGS_TABLE
+    const bookingParams = {
+      TableName: BOOKINGS_TABLE,
+      Item: bookingEntry,
+    };
+
+    const putCommand = new PutCommand(bookingParams);
+    await docClient.send(putCommand);
 
     res.status(200).json({
-      msg: "Rooms booked successfully",
+      msg: 'Rooms booked successfully under one booking',
+      bookingId: bookingId,
       totalSum: totalSum,
-      orders: orders.map((order) => ({
-        clientName: order.clientName,
-        sum: order.sum,
-        guests: order.guests,
-        epost: order.epost,
-        orderId: order.id,
-        roomId: order.roomId,
-        checkIn: order.checkIn,
-        checkOut: order.checkOut,
-      })),
+      rooms: roomsInfo,
     });
   } catch (error) {
     res.status(500).json({ msg: error.message });
@@ -139,14 +135,14 @@ app.post("/bookings", async (req, res) => {
 });
 
 // DELETE BOOKING
-app.delete("/bookings/:orderId", async (req, res) => {
-  const { orderId } = req.params;
+app.delete("/bookings/:bookingId", async (req, res) => {
+  const { bookingId } = req.params;
 
   try {
     // Retrieve the booking details
     const getParams = {
       TableName: BOOKINGS_TABLE,
-      Key: { id: orderId },
+      Key: { id: bookingId },
     };
 
     const getCommand = new GetCommand(getParams);
@@ -155,7 +151,7 @@ app.delete("/bookings/:orderId", async (req, res) => {
     if (!booking.Item) {
       return res
         .status(404)
-        .json({ msg: "No booking found with that orderId", orderId });
+        .json({ msg: 'No booking found with that bookingId', bookingId });
     }
 
     const checkInDate = new Date(booking.Item.checkIn);
@@ -165,35 +161,35 @@ app.delete("/bookings/:orderId", async (req, res) => {
 
     if (daysDifference <= 2) {
       return res.status(400).json({
-        msg: "You cannot delete this booking. The check-in date is within 2 days.",
+        msg: 'You cannot delete this booking. The check-in date is within 2 days.',
       });
     }
-    const updateParams = booking.Item.roomId;
+    const bookedRooms = booking.Item.rooms;
 
-    // Delete booking
+    // Update room availability to true
+    for (const room of bookedRooms) {
+      const updateRoomParams = {
+        TableName: ROOMS_TABLE,
+        Key: { id: room.roomId },
+        UpdateExpression: 'SET available = :available',
+        ExpressionAttributeValues: {
+          ':available': true,
+        },
+      };
+
+      const updateRoomCommand = new UpdateCommand(updateRoomParams);
+      await docClient.send(updateRoomCommand);
+    }
     const deleteParams = {
       TableName: BOOKINGS_TABLE,
-      Key: { id: orderId },
-    };
+      Key: { id: bookingId},
+    }
     const deleteCommand = new DeleteCommand(deleteParams);
     await docClient.send(deleteCommand);
 
-    // Update room availability to true
-    const updateRoomParams = {
-      TableName: ROOMS_TABLE,
-      Key: { id: updateParams },
-      UpdateExpression: "SET available = :available",
-      ExpressionAttributeValues: {
-        ":available": true,
-      },
-    };
-
-    const updateRoomCommand = new UpdateCommand(updateRoomParams);
-    await docClient.send(updateRoomCommand);
-
     res
       .status(200)
-      .json({ msg: `Booking ${updateParams} deleted successfully` });
+      .json({ msg: `Booking ${bookingId} deleted successfully` });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
