@@ -21,6 +21,7 @@ app.post("/bookings", async (req, res) => {
   const { bookings } = body; // Expect an array of booking details (roomId, checkIn, checkOut, etc.)
 
   try {
+    let totalSum = 0;
     const orders = [];
 
     // First phase: validation for all bookings
@@ -71,7 +72,7 @@ app.post("/bookings", async (req, res) => {
       const checkOutDate = new Date(checkOut);
       const days = calculateDateDifference(checkInDate, checkOutDate);
       const sum = Number(foundRoom.Item.price) * days;
-
+      totalSum += sum;
       // Prepare the order but don't save yet
       const order = {
         id: uuid(),
@@ -120,6 +121,7 @@ app.post("/bookings", async (req, res) => {
 
     res.status(200).json({
       msg: "Rooms booked successfully",
+      totalSum: totalSum,
       orders: orders.map((order) => ({
         clientName: order.clientName,
         sum: order.sum,
