@@ -21,9 +21,9 @@ app.post("/bookings", async (req, res) => {
   const { bookings } = body; // Expect an array of booking details (roomId, checkIn, checkOut, etc.)
 
   try {
-    
     const orders = [];
 
+    // First phase: validation for all bookings
     for (const booking of bookings) {
       const { roomId, checkIn, checkOut, clientName, guests, epost } = booking;
 
@@ -40,7 +40,7 @@ app.post("/bookings", async (req, res) => {
       }
 
       if (foundRoom.Item.available == false) {
-        throw new Error(`The room with this id:${roomId} is not available`);
+        throw new Error(`The room with id: ${roomId} is not available`);
       }
 
       const controlGuestAmount = (guests) => {
@@ -65,13 +65,14 @@ app.post("/bookings", async (req, res) => {
         }
       };
 
+      controlGuestAmount(guests); // Validate the guest amount
+
       const checkInDate = new Date(checkIn);
       const checkOutDate = new Date(checkOut);
       const days = calculateDateDifference(checkInDate, checkOutDate);
       const sum = Number(foundRoom.Item.price) * days;
 
-      controlGuestAmount(guests);
-
+      // Prepare the order but don't save yet
       const order = {
         id: uuid(),
         roomId: roomId,
@@ -84,12 +85,15 @@ app.post("/bookings", async (req, res) => {
         guests: guests,
       };
 
-      orders.push(order);
+      orders.push(order); // Collect all valid orders
+    }
 
+    //If all validations passed, update room availability and book the rooms
+    for (const order of orders) {
       // Update the room availability
       const updateRoomParams = {
         TableName: ROOMS_TABLE,
-        Key: { id: roomId },
+        Key: { id: order.roomId },
         UpdateExpression: "SET available = :available",
         ExpressionAttributeValues: {
           ":available": false,
@@ -97,7 +101,7 @@ app.post("/bookings", async (req, res) => {
       };
 
       const updateRoomCommand = new UpdateCommand(updateRoomParams);
-      await docClient.send(updateRoomCommand);
+      await docClient.send(updateRoomCommand); // Now update room availability
     }
 
     // Batch write all orders at once using BatchWriteCommand
@@ -106,7 +110,7 @@ app.post("/bookings", async (req, res) => {
         [BOOKINGS_TABLE]: orders.map((order) => ({
           PutRequest: {
             Item: order,
-          }, 
+          },
         })),
       },
     };
@@ -124,7 +128,7 @@ app.post("/bookings", async (req, res) => {
         orderId: order.id,
         roomId: order.roomId,
         checkIn: order.checkIn,
-        checkOut: order.checkOut
+        checkOut: order.checkOut,
       })),
     });
   } catch (error) {
