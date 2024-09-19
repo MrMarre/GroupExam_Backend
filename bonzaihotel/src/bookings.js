@@ -5,6 +5,7 @@ const {
   UpdateCommand,
   DeleteCommand,
   BatchWriteCommand,
+  ScanCommand,
 } = require("@aws-sdk/lib-dynamodb");
 const serverless = require("serverless-http");
 const { v4: uuid } = require("uuid");
@@ -211,6 +212,22 @@ app.get("/bookings/:id", async (req, res) => {
       res.status(200).json({ bookingid: id, bookingInfo });
     } else {
       res.status(404).json({ msg: "Booking not found" });
+    }
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
+
+app.get("/bookings", async (req, res) => {
+  const params = {
+    TableName: BOOKINGS_TABLE,
+  };
+
+  try {
+    const command = new ScanCommand(params);
+    const { Items } = await docClient.send(command);
+    if (Items) {
+      res.status(200).json(Items);
     }
   } catch (error) {
     res.status(500).json({ msg: error.message });
