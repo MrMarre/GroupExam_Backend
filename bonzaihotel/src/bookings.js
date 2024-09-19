@@ -135,65 +135,6 @@ app.post("/bookings", async (req, res) => {
   }
 });
 
-//* DELETE BOOKING
-app.delete("/bookings/:bookingId", async (req, res) => {
-  const { bookingId } = req.params;
-
-  try {
-    const getParams = {
-      TableName: BOOKINGS_TABLE,
-      Key: { id: bookingId },
-    };
-
-    const getCommand = new GetCommand(getParams);
-    const booking = await docClient.send(getCommand);
-
-    if (!booking.Item) {
-      return res
-        .status(404)
-        .json({ msg: "No booking found with that bookingId", bookingId });
-    }
-
-    const checkInDate = new Date(booking.Item.checkIn);
-    const currentDate = new Date();
-    const timeDifference = checkInDate.getTime() - currentDate.getTime();
-    // const daysDifference = timeDifference / (1000 * 3600 * 24);
-
-    // if (daysDifference <= 2) {
-    //   return res.status(400).json({
-    //     msg: 'You cannot delete this booking. The check-in date is within 2 days.',
-    //   });
-    // }
-
-    // Update room availability to true
-    const bookedRooms = booking.Item.rooms;
-
-    for (const room of bookedRooms) {
-      const updateRoomParams = {
-        TableName: ROOMS_TABLE,
-        Key: { id: room.roomId },
-        UpdateExpression: "SET available = :available",
-        ExpressionAttributeValues: {
-          ":available": true,
-        },
-      };
-
-      const updateRoomCommand = new UpdateCommand(updateRoomParams);
-      await docClient.send(updateRoomCommand);
-    }
-    const deleteParams = {
-      TableName: BOOKINGS_TABLE,
-      Key: { id: bookingId },
-    };
-    const deleteCommand = new DeleteCommand(deleteParams);
-    await docClient.send(deleteCommand);
-
-    res.status(200).json({ msg: `Booking ${bookingId} deleted successfully` });
-  } catch (error) {
-    res.status(500).json({ msg: error.message });
-  }
-});
-
 //* GET
 app.get("/bookings/:id", async (req, res) => {
   const { id } = req.params;
@@ -216,69 +157,116 @@ app.get("/bookings/:id", async (req, res) => {
 });
 
 //* DELETE ROOM
-app.delete("/bookings/rooms/:roomId", async (req, res) => {
-  const { roomId } = req.params;
+app.delete("/bookings/:id", async (req, res) => {
+  const { id } = req.params;
+  const { roomId } = req.body;
 
   try {
-    // Scan the BOOKINGS_TABLE to retrieve all bookings
-    const scanParams = {
+    const getParams = {
       TableName: BOOKINGS_TABLE,
+      Key: { id },
     };
 
-    const scanCommand = new ScanCommand(scanParams);
-    const bookings = await docClient.send(scanCommand);
+    const getCommand = new GetCommand(getParams);
+    const { Item } = await docClient.send(getCommand);
 
-    if (!bookings.Items || bookings.Items.length === 0) {
-      return res.status(404).json({ msg: "No bookings found in the database" });
+    if (!Item) {
+      return res.status(404).json({ msg: "Booking not found" });
     }
 
-    // Find the booking with roomId
-    const booking = bookings.Items.find(
-      (item) => item.rooms && item.rooms.some((room) => room.roomId === roomId)
-    );
+    const currentDate = new Date();
 
-    if (!booking) {
-      return res
-        .status(404)
-        .json({ msg: "Could not find the roomId inside any booking", roomId });
-    }
+    // Function to update room availability
+    const updateRoomAvailability = async (roomId) => {
+      const updateRoomParams = {
+        TableName: ROOMS_TABLE,
+        Key: { id: roomId },
+        UpdateExpression: "SET available = :available",
+        ExpressionAttributeValues: {
+          ":available": true,
+        },
+      };
 
-    const bookingId = booking.id;
+      const updateRoomCommand = new UpdateCommand(updateRoomParams);
+      await docClient.send(updateRoomCommand);
+    };
 
-    // Remove the room from the booking's rooms array
-    const updatedRooms = booking.rooms.filter((room) => room.roomId !== roomId);
+    //if no roomId is provided, delete the booking instead
+    if (!roomId) {
+      //check if all rooms have at least 2 days left until checkOut
+      for (const room of Item.rooms) {
+        const roomCheckOutDate = new Date(room.checkOut);
+        const timeDifference =
+          roomCheckOutDate.getTime() - currentDate.getTime();
+        const daysDifference = timeDifference / (1000 * 3600 * 24);
 
-    if (updatedRooms.length === 0) {
-      // If no rooms are left, delete the booking
+        if (daysDifference <= 2) {
+          return res.status(400).json({
+            msg: `Cannot delete booking. Room ${room.roomId} has a check-out date within 2 days.`,
+          });
+        }
+      }
+
+      // Loop through all rooms and set them to available
+      for (const room of Item.rooms) {
+        await updateRoomAvailability(room.roomId);
+      }
+
       const deleteParams = {
         TableName: BOOKINGS_TABLE,
-        Key: { id: bookingId },
+        Key: { id },
       };
 
       const deleteCommand = new DeleteCommand(deleteParams);
       await docClient.send(deleteCommand);
 
-      return res.status(200).json({
-        msg: `Booking ${bookingId} deleted successfully, as no rooms were left`,
+      return res
+        .status(200)
+        .json({ msg: `Booking ${id} deleted successfully` });
+    }
+
+    //if roomId is provided, find and remove specific room
+    const foundRoom = Item.rooms.find((room) => room.roomId === roomId);
+    if (!foundRoom) {
+      return res
+        .status(404)
+        .json({ msg: `Room with roomId ${roomId} not found in booking ${id}` });
+    }
+
+    const updatedRooms = Item.rooms.filter((room) => room.roomId !== roomId);
+
+    // Check if the specific room has at least 2 days left until checkOut
+    const roomCheckOutDate = new Date(foundRoom.checkOut);
+    const timeDifference = roomCheckOutDate.getTime() - currentDate.getTime();
+    const daysDifference = timeDifference / (1000 * 3600 * 24);
+
+    if (daysDifference <= 2) {
+      return res.status(400).json({
+        msg: `Cannot delete room ${roomId}. The check-out date is within 2 days.`,
       });
     }
 
-    // Boolean to true
-    const updateRoomParams = {
-      TableName: ROOMS_TABLE,
-      Key: { id: roomId },
-      UpdateExpression: "SET available = :available",
-      ExpressionAttributeValues: {
-        ":available": true,
-      },
-    };
-    const updateRoomCommand = new UpdateCommand(updateRoomParams);
-    await docClient.send(updateRoomCommand);
+    // Mark the room as available
+    await updateRoomAvailability(roomId);
 
-    // Update the booking with the remaining rooms
+    if (updatedRooms.length === 0) {
+      const deleteBookingParams = {
+        TableName: BOOKINGS_TABLE,
+        Key: { id },
+      };
+
+      const deleteBookingCommand = new DeleteCommand(deleteBookingParams);
+      await docClient.send(deleteBookingCommand);
+
+      return res
+        .status(200)
+        .json({ msg: `Booking ${id} deleted as no rooms were left` });
+    }
+
+    // Update the booking with remaining rooms
     const updateBookingParams = {
       TableName: BOOKINGS_TABLE,
-      Key: { id: bookingId },
+      Key: { id },
       UpdateExpression: "SET rooms = :rooms",
       ExpressionAttributeValues: {
         ":rooms": updatedRooms,
@@ -289,8 +277,8 @@ app.delete("/bookings/rooms/:roomId", async (req, res) => {
     const updateBookingCommand = new UpdateCommand(updateBookingParams);
     const updatedBooking = await docClient.send(updateBookingCommand);
 
-    res.status(200).json({
-      msg: `Room ${roomId} removed from booking ${bookingId} successfully`,
+    return res.status(200).json({
+      msg: `Room ${roomId} removed from booking ${id} successfully`,
       updatedBooking: updatedBooking.Attributes,
     });
   } catch (error) {
