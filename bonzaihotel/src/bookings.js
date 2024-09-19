@@ -174,41 +174,41 @@ app.delete('/bookings/:bookingId', async (req, res) => {
 
 //* GET
 app.get('/bookings/:id', async (req, res) => {
-  const {id} = req.params;
+  const { id } = req.params;
   const params = {
     TableName: BOOKINGS_TABLE,
   };
 
-
   try {
-
     const command = new GetCommand(params);
     const { Item: bookingInfo } = await docClient.send(command);
     if (bookingInfo) {
       res.status(200).json({ bookingid: id, bookingInfo });
     } else {
       res.status(404).json({ msg: 'Booking not found' });
-    if (Items) {
-      // Calculate the total sum of all "sum" fields in the "rooms" array for each booking
-      const totalSum = Items.reduce((total, item) => {
-        return (
-          total +
-          item.rooms.reduce((roomTotal, room) => roomTotal + (room.sum || 0), 0)
-        );
-      }, 0);
+      if (Items) {
+        // Calculate the total sum of all "sum" fields in the "rooms" array for each booking
+        const totalSum = Items.reduce((total, item) => {
+          return (
+            total +
+            item.rooms.reduce(
+              (roomTotal, room) => roomTotal + (room.sum || 0),
+              0
+            )
+          );
+        }, 0);
 
-      // Send response with total booking sum
-      res.status(200).json({
-        bookings: Items,
-        totalBookingSum: totalSum,
-      });
-
+        // Send response with total booking sum
+        res.status(200).json({
+          bookings: Items,
+          totalBookingSum: totalSum,
+        });
+      }
     }
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
 });
-
 
 //* DELETE ROOM
 app.delete('/bookings/rooms/:roomId', async (req, res) => {
@@ -430,11 +430,9 @@ app.put('/bookings/:id', async (req, res) => {
   }
 });
 
-
 //*GET BOOKING
 
-app.get("/bookings", async (req, res) => {
-
+app.get('/bookings', async (req, res) => {
   const params = {
     TableName: BOOKINGS_TABLE,
   };
