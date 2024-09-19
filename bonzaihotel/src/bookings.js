@@ -4,29 +4,31 @@ const {
   PutCommand,
   UpdateCommand,
   DeleteCommand,
-  BatchWriteCommand,
   ScanCommand,
 } = require("@aws-sdk/lib-dynamodb");
 const serverless = require("serverless-http");
 const { v4: uuid } = require("uuid");
 const { initExpress } = require("../initializers/initExpress");
 const { calculateDateDifference } = require("../functions/dateHelper");
-
 const BOOKINGS_TABLE = process.env.BOOKINGS_TABLE;
 const ROOMS_TABLE = process.env.ROOMS_TABLE;
 
 const app = initExpress();
 
+//* POST BOOKING
 app.post("/bookings", async (req, res) => {
   const body = req.body;
-  const { bookings } = body; // Expect an array of booking details (roomId, checkIn, checkOut, etc.)
+  const { bookings } = body;
 
   try {
-    const orders = [];
+    let totalSum = 0;
+    const roomsInfo = [];
+    const clientName = bookings[0].clientName;
+    const epost = bookings[0].epost;
 
     // First phase: validation for all bookings
     for (const booking of bookings) {
-      const { roomId, checkIn, checkOut, clientName, guests, epost } = booking;
+      const { roomId, checkIn, checkOut, guests } = booking;
 
       const roomParams = {
         TableName: ROOMS_TABLE,
@@ -44,6 +46,7 @@ app.post("/bookings", async (req, res) => {
         throw new Error(`The room with id: ${roomId} is not available`);
       }
 
+      // Validate guest amount
       const controlGuestAmount = (guests) => {
         let maxGuests;
         switch (foundRoom.Item.room) {
@@ -72,29 +75,24 @@ app.post("/bookings", async (req, res) => {
       const checkOutDate = new Date(checkOut);
       const days = calculateDateDifference(checkInDate, checkOutDate);
       const sum = Number(foundRoom.Item.price) * days;
+      totalSum += sum;
 
-      // Prepare the order but don't save yet
-      const order = {
-        id: uuid(),
+      // Store room details in the booking
+      roomsInfo.push({
         roomId: roomId,
-        days: days,
+        roomType: foundRoom.Item.room,
+        guests: guests,
         checkIn: checkInDate.toISOString(),
         checkOut: checkOutDate.toISOString(),
         sum: sum,
-        epost: epost,
-        clientName: clientName,
-        guests: guests,
-      };
-
-      orders.push(order); // Collect all valid orders
+      });
     }
 
-    //If all validations passed, update room availability and book the rooms
-    for (const order of orders) {
-      // Update the room availability
+    // Update room availability for all rooms
+    for (const room of roomsInfo) {
       const updateRoomParams = {
         TableName: ROOMS_TABLE,
-        Key: { id: order.roomId },
+        Key: { id: room.roomId },
         UpdateExpression: "SET available = :available",
         ExpressionAttributeValues: {
           ":available": false,
@@ -102,50 +100,49 @@ app.post("/bookings", async (req, res) => {
       };
 
       const updateRoomCommand = new UpdateCommand(updateRoomParams);
-      await docClient.send(updateRoomCommand); // Now update room availability
+      await docClient.send(updateRoomCommand);
     }
 
-    // Batch write all orders at once using BatchWriteCommand
-    const bookingParams = {
-      RequestItems: {
-        [BOOKINGS_TABLE]: orders.map((order) => ({
-          PutRequest: {
-            Item: order,
-          },
-        })),
-      },
+    // Create one booking entry with multiple rooms
+    const bookingId = uuid();
+    const bookingEntry = {
+      id: bookingId,
+      clientName: clientName,
+      epost: epost,
+      totalSum: totalSum,
+      rooms: roomsInfo,
+      bookingDate: new Date().toISOString(),
     };
 
-    const batchWriteCommand = new BatchWriteCommand(bookingParams);
-    await docClient.send(batchWriteCommand); // Use docClient.send for BatchWriteCommand
+    // Save the booking to the BOOKINGS_TABLE
+    const bookingParams = {
+      TableName: BOOKINGS_TABLE,
+      Item: bookingEntry,
+    };
+
+    const putCommand = new PutCommand(bookingParams);
+    await docClient.send(putCommand);
 
     res.status(200).json({
-      msg: "Rooms booked successfully",
-      orders: orders.map((order) => ({
-        clientName: order.clientName,
-        sum: order.sum,
-        guests: order.guests,
-        epost: order.epost,
-        orderId: order.id,
-        roomId: order.roomId,
-        checkIn: order.checkIn,
-        checkOut: order.checkOut,
-      })),
+      msg: "Rooms booked successfully under one booking",
+      clientName: clientName,
+      bookingId: bookingId,
+      totalSum: totalSum,
+      rooms: roomsInfo,
     });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
 });
 
-// DELETE BOOKING
-app.delete("/bookings/:orderId", async (req, res) => {
-  const { orderId } = req.params;
+//* DELETE BOOKING
+app.delete("/bookings/:bookingId", async (req, res) => {
+  const { bookingId } = req.params;
 
   try {
-    // Retrieve the booking details
     const getParams = {
       TableName: BOOKINGS_TABLE,
-      Key: { id: orderId },
+      Key: { id: bookingId },
     };
 
     const getCommand = new GetCommand(getParams);
@@ -154,50 +151,50 @@ app.delete("/bookings/:orderId", async (req, res) => {
     if (!booking.Item) {
       return res
         .status(404)
-        .json({ msg: "No booking found with that orderId", orderId });
+        .json({ msg: "No booking found with that bookingId", bookingId });
     }
 
     const checkInDate = new Date(booking.Item.checkIn);
     const currentDate = new Date();
     const timeDifference = checkInDate.getTime() - currentDate.getTime();
-    const daysDifference = timeDifference / (1000 * 3600 * 24);
+    // const daysDifference = timeDifference / (1000 * 3600 * 24);
 
-    if (daysDifference <= 2) {
-      return res.status(400).json({
-        msg: "You cannot delete this booking. The check-in date is within 2 days.",
-      });
+    // if (daysDifference <= 2) {
+    //   return res.status(400).json({
+    //     msg: 'You cannot delete this booking. The check-in date is within 2 days.',
+    //   });
+    // }
+
+    // Update room availability to true
+    const bookedRooms = booking.Item.rooms;
+
+    for (const room of bookedRooms) {
+      const updateRoomParams = {
+        TableName: ROOMS_TABLE,
+        Key: { id: room.roomId },
+        UpdateExpression: "SET available = :available",
+        ExpressionAttributeValues: {
+          ":available": true,
+        },
+      };
+
+      const updateRoomCommand = new UpdateCommand(updateRoomParams);
+      await docClient.send(updateRoomCommand);
     }
-    const updateParams = booking.Item.roomId;
-
-    // Delete booking
     const deleteParams = {
       TableName: BOOKINGS_TABLE,
-      Key: { id: orderId },
+      Key: { id: bookingId },
     };
     const deleteCommand = new DeleteCommand(deleteParams);
     await docClient.send(deleteCommand);
 
-    // Update room availability to true
-    const updateRoomParams = {
-      TableName: ROOMS_TABLE,
-      Key: { id: updateParams },
-      UpdateExpression: "SET available = :available",
-      ExpressionAttributeValues: {
-        ":available": true,
-      },
-    };
-
-    const updateRoomCommand = new UpdateCommand(updateRoomParams);
-    await docClient.send(updateRoomCommand);
-
-    res
-      .status(200)
-      .json({ msg: `Booking ${updateParams} deleted successfully` });
+    res.status(200).json({ msg: `Booking ${bookingId} deleted successfully` });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
 });
 
+//* GET
 app.get("/bookings/:id", async (req, res) => {
   const { id } = req.params;
   try {
@@ -213,6 +210,222 @@ app.get("/bookings/:id", async (req, res) => {
     } else {
       res.status(404).json({ msg: "Booking not found" });
     }
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
+
+//* DELETE ROOM
+app.delete("/bookings/rooms/:roomId", async (req, res) => {
+  const { roomId } = req.params;
+
+  try {
+    // Scan the BOOKINGS_TABLE to retrieve all bookings
+    const scanParams = {
+      TableName: BOOKINGS_TABLE,
+    };
+
+    const scanCommand = new ScanCommand(scanParams);
+    const bookings = await docClient.send(scanCommand);
+
+    if (!bookings.Items || bookings.Items.length === 0) {
+      return res.status(404).json({ msg: "No bookings found in the database" });
+    }
+
+    // Find the booking with roomId
+    const booking = bookings.Items.find(
+      (item) => item.rooms && item.rooms.some((room) => room.roomId === roomId)
+    );
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ msg: "Could not find the roomId inside any booking", roomId });
+    }
+
+    const bookingId = booking.id;
+
+    // Remove the room from the booking's rooms array
+    const updatedRooms = booking.rooms.filter((room) => room.roomId !== roomId);
+
+    if (updatedRooms.length === 0) {
+      // If no rooms are left, delete the booking
+      const deleteParams = {
+        TableName: BOOKINGS_TABLE,
+        Key: { id: bookingId },
+      };
+
+      const deleteCommand = new DeleteCommand(deleteParams);
+      await docClient.send(deleteCommand);
+
+      return res.status(200).json({
+        msg: `Booking ${bookingId} deleted successfully, as no rooms were left`,
+      });
+    }
+
+    // Boolean to true
+    const updateRoomParams = {
+      TableName: ROOMS_TABLE,
+      Key: { id: roomId },
+      UpdateExpression: "SET available = :available",
+      ExpressionAttributeValues: {
+        ":available": true,
+      },
+    };
+    const updateRoomCommand = new UpdateCommand(updateRoomParams);
+    await docClient.send(updateRoomCommand);
+
+    // Update the booking with the remaining rooms
+    const updateBookingParams = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id: bookingId },
+      UpdateExpression: "SET rooms = :rooms",
+      ExpressionAttributeValues: {
+        ":rooms": updatedRooms,
+      },
+      ReturnValues: "ALL_NEW",
+    };
+
+    const updateBookingCommand = new UpdateCommand(updateBookingParams);
+    const updatedBooking = await docClient.send(updateBookingCommand);
+
+    res.status(200).json({
+      msg: `Room ${roomId} removed from booking ${bookingId} successfully`,
+      updatedBooking: updatedBooking.Attributes,
+    });
+  } catch (error) {
+    res.status(500).json({ msg: error.message });
+  }
+});
+
+//* PUT BOOKING
+app.put("/bookings/:id", async (req, res) => {
+  const { id } = req.params;
+  const { roomId, newRoomId, guests, checkIn, checkOut } = req.body;
+
+  try {
+    // Retrieve the booking details first
+    const bookingParams = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id: id },
+    };
+    const getBookingCommand = new GetCommand(bookingParams);
+    const booking = await docClient.send(getBookingCommand);
+
+    if (!booking.Item) {
+      return res.status(404).json({ msg: "Booking not found" });
+    }
+
+    let updatedRoomId = roomId; // Default to the roomId provided in the body
+
+    // If user wants to change a room, find and update the new room details
+    if (newRoomId) {
+      const newRoomParams = {
+        TableName: ROOMS_TABLE,
+        Key: { id: newRoomId },
+      };
+      const getNewRoomCommand = new GetCommand(newRoomParams);
+      const foundNewRoom = await docClient.send(getNewRoomCommand);
+
+      if (!foundNewRoom.Item) {
+        return res.status(404).json({ msg: "New room not found" });
+      }
+
+      // Mark the old room as available
+      const updateOldRoomParams = {
+        TableName: ROOMS_TABLE,
+        Key: { id: roomId },
+        UpdateExpression: "SET available = :available",
+        ExpressionAttributeValues: {
+          ":available": true,
+        },
+      };
+      const updateOldRoomCommand = new UpdateCommand(updateOldRoomParams);
+      await docClient.send(updateOldRoomCommand);
+
+      // Mark the new room as unavailable
+      const updateNewRoomParams = {
+        TableName: ROOMS_TABLE,
+        Key: { id: newRoomId },
+        UpdateExpression: "SET available = :available",
+        ExpressionAttributeValues: {
+          ":available": false,
+        },
+      };
+      const updateNewRoomCommand = new UpdateCommand(updateNewRoomParams);
+      await docClient.send(updateNewRoomCommand);
+
+      updatedRoomId = newRoomId; // Set roomId to the new roomId
+    }
+
+    // Fetch the updated room
+    const roomParams = {
+      TableName: ROOMS_TABLE,
+      Key: { id: updatedRoomId },
+    };
+    const getRoomCommand = new GetCommand(roomParams);
+    const foundRoom = await docClient.send(getRoomCommand);
+
+    if (!foundRoom.Item) {
+      return res.status(404).json({ msg: "Room not found" });
+    }
+
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    const days = calculateDateDifference(checkInDate, checkOutDate);
+    const totalSum = Number(foundRoom.Item.price) * days;
+
+    // Find the index of the room to update in the rooms array
+    let updatedRoomsArray = booking.Item.rooms || [];
+    const roomIndex = updatedRoomsArray.findIndex(
+      (room) => room.roomId === roomId
+    );
+
+    if (roomIndex !== -1) {
+      // If the room is already in the array, replace it
+      updatedRoomsArray[roomIndex] = {
+        roomId: updatedRoomId,
+        guests: guests,
+        checkIn: checkIn,
+        checkOut: checkOut,
+        sum: totalSum,
+        roomType: foundRoom.Item.room,
+      };
+    } else {
+      // If the room is not in the array, add it
+      updatedRoomsArray.push({
+        roomId: updatedRoomId,
+        guests: guests,
+        checkIn: checkIn,
+        checkOut: checkOut,
+        sum: totalSum,
+        roomType: foundRoom.Item.room,
+      });
+    }
+
+    // Update the booking entry in the database with the updated rooms array
+    const updateBookingParams = {
+      TableName: BOOKINGS_TABLE,
+      Key: { id: id },
+      UpdateExpression:
+        "SET rooms = :rooms, guests = :guests, checkIn = :checkIn, checkOut = :checkOut, totalSum = :totalSum ",
+      ExpressionAttributeValues: {
+        ":rooms": updatedRoomsArray,
+        ":guests": guests,
+        ":checkIn": checkIn,
+        ":checkOut": checkOut,
+        ":totalSum": totalSum,
+      },
+      ReturnValues: "ALL_NEW",
+    };
+
+    const updateBookingCommand = new UpdateCommand(updateBookingParams);
+    const result = await docClient.send(updateBookingCommand);
+
+    res.status(200).json({
+      msg: "Booking updated successfully",
+      updatedBooking: result.Attributes,
+    });
   } catch (error) {
     res.status(500).json({ msg: error.message });
   }
@@ -235,88 +448,3 @@ app.get("/bookings", async (req, res) => {
 });
 
 exports.handler = serverless(app);
-
-// app.post("/bookings/:roomId", async (req, res) => {
-//   const body = req.body;
-//   const { roomId } = req.params;
-//   const checkIn = new Date(body.checkIn);
-//   const checkOut = new Date(body.checkOut);
-//   const { clientName, guests } = req.body;
-
-//   const roomParams = {
-//     TableName: ROOMS_TABLE,
-//     Key: { id: roomId },
-//   };
-
-//   const roomCommand = new GetCommand(roomParams);
-//   const foundRoom = await docClient.send(roomCommand);
-
-//   if (!foundRoom.Item) {
-//     return res.status(404).json({ msg: "No room found with that id" });
-//   }
-
-//   const controlGuestAmount = (guests) => {
-//     let maxGuests;
-//     switch (foundRoom.Item.room) {
-//       case "single":
-//         maxGuests = 1;
-//         break;
-//       case "double":
-//         maxGuests = 2;
-//         break;
-//       case "suite":
-//         maxGuests = 3;
-//         break;
-//       default:
-//         maxGuests = 1;
-//     }
-//     if (guests > maxGuests) {
-//       throw new Error(`Too many guests. Maximum allowed is ${maxGuests}`);
-//     }
-//   };
-
-//   const days = calculateDateDifference(checkIn, checkOut);
-//   const sum = Number(foundRoom.Item.price) * days;
-//   try {
-//     controlGuestAmount(guests);
-
-//     const order = {
-//       id: uuid(),
-//       roomId: roomId,
-//       days: days,
-//       checkIn: checkIn.toISOString(),
-//       checkOut: checkOut.toISOString(),
-//       sum: sum,
-//       clientName: clientName,
-//       guests: guests,
-//     };
-
-//     const bookingParams = {
-//       TableName: BOOKINGS_TABLE,
-//       Item: order,
-//     };
-//     const bookingCommand = new PutCommand(bookingParams);
-//     await docClient.send(bookingCommand);
-
-//     // Update the room availability
-//     const updateRoomParams = {
-//       TableName: ROOMS_TABLE,
-//       Key: { id: roomId },
-//       UpdateExpression: "SET available = :available",
-//       ExpressionAttributeValues: {
-//         ":available": false,
-//       },
-//     };
-
-//     const updateRoomCommand = new UpdateCommand(updateRoomParams);
-//     await docClient.send(updateRoomCommand);
-
-//     res.status(200).json({
-//       msg: "Room booked successfully",
-//       orderId: order.id,
-//       roomId: roomId,
-//     });
-//   } catch (error) {
-//     res.status(500).json({ msg: error.message });
-//   }
-// });
