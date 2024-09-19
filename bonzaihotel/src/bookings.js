@@ -10,6 +10,7 @@ const serverless = require("serverless-http");
 const { v4: uuid } = require("uuid");
 const { initExpress } = require("../initializers/initExpress");
 const { calculateDateDifference } = require("../functions/dateHelper");
+const { controlGuestAmount } = require("../functions/controlGuestAmount");
 const BOOKINGS_TABLE = process.env.BOOKINGS_TABLE;
 const ROOMS_TABLE = process.env.ROOMS_TABLE;
 
@@ -46,30 +47,7 @@ app.post("/bookings", async (req, res) => {
         throw new Error(`The room with id: ${roomId} is not available`);
       }
 
-      // Validate guest amount
-      const controlGuestAmount = (guests) => {
-        let maxGuests;
-        switch (foundRoom.Item.room) {
-          case "single":
-            maxGuests = 1;
-            break;
-          case "double":
-            maxGuests = 2;
-            break;
-          case "suite":
-            maxGuests = 3;
-            break;
-          default:
-            maxGuests = 1;
-        }
-        if (guests > maxGuests) {
-          throw new Error(
-            `Too many guests for room id ${roomId}. Maximum allowed is ${maxGuests}`
-          );
-        }
-      };
-
-      controlGuestAmount(guests); // Validate the guest amount
+      controlGuestAmount(guests, foundRoom);
 
       const checkInDate = new Date(checkIn);
       const checkOutDate = new Date(checkOut);
@@ -138,18 +116,35 @@ app.post("/bookings", async (req, res) => {
 //* GET
 app.get("/bookings/:id", async (req, res) => {
   const { id } = req.params;
-  try {
-    const params = {
-      TableName: BOOKINGS_TABLE,
-      Key: { id },
-    };
+  const params = {
+    TableName: BOOKINGS_TABLE,
+  };
 
+  try {
     const command = new GetCommand(params);
     const { Item: bookingInfo } = await docClient.send(command);
     if (bookingInfo) {
       res.status(200).json({ bookingid: id, bookingInfo });
     } else {
       res.status(404).json({ msg: "Booking not found" });
+      if (Items) {
+        // Calculate the total sum of all "sum" fields in the "rooms" array for each booking
+        const totalSum = Items.reduce((total, item) => {
+          return (
+            total +
+            item.rooms.reduce(
+              (roomTotal, room) => roomTotal + (room.sum || 0),
+              0
+            )
+          );
+        }, 0);
+
+        // Send response with total booking sum
+        res.status(200).json({
+          bookings: Items,
+          totalBookingSum: totalSum,
+        });
+      }
     }
   } catch (error) {
     res.status(500).json({ msg: error.message });
@@ -328,6 +323,7 @@ app.put("/bookings/:id", async (req, res) => {
           ":available": true,
         },
       };
+
       const updateOldRoomCommand = new UpdateCommand(updateOldRoomParams);
       await docClient.send(updateOldRoomCommand);
 
@@ -351,12 +347,15 @@ app.put("/bookings/:id", async (req, res) => {
       TableName: ROOMS_TABLE,
       Key: { id: updatedRoomId },
     };
+    if (roomParams.Item) {
+    }
     const getRoomCommand = new GetCommand(roomParams);
     const foundRoom = await docClient.send(getRoomCommand);
 
     if (!foundRoom.Item) {
       return res.status(404).json({ msg: "Room not found" });
     }
+    controlGuestAmount(guests, foundRoom);
 
     const checkInDate = new Date(checkIn);
     const checkOutDate = new Date(checkOut);
@@ -418,6 +417,8 @@ app.put("/bookings/:id", async (req, res) => {
     res.status(500).json({ msg: error.message });
   }
 });
+
+//*GET BOOKING
 
 app.get("/bookings", async (req, res) => {
   const params = {
