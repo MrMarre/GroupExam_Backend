@@ -118,6 +118,7 @@ app.get("/bookings/:id", async (req, res) => {
   const { id } = req.params;
   const params = {
     TableName: BOOKINGS_TABLE,
+    Key: { id }
   };
 
   try {
