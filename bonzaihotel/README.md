@@ -5,11 +5,6 @@ Christian: serverlessbonzai
 
 Todo:
 
-1. PUT on booking, change room, amount of people, date for checkin and checkout.
-2. Double check the delete request. -----DONE
-3. Change the get command to scan command. -----DONE
-4. Add totalsum that displays to the customer. -----DONE
-5. PUT - make sure that number of guests is checked in the putRequest
 6. Control the totalSum in the get bookings/:id - doesn't update right now
 
 Nice to have

@@ -118,34 +118,29 @@ app.get("/bookings/:id", async (req, res) => {
   const { id } = req.params;
   const params = {
     TableName: BOOKINGS_TABLE,
-    Key: { id }
+    Key: { id },
   };
 
   try {
     const command = new GetCommand(params);
     const { Item: bookingInfo } = await docClient.send(command);
+
     if (bookingInfo) {
-      res.status(200).json({ bookingid: id, bookingInfo });
+      // Loop through the rooms array and sum up all the room 'sum' fields
+      const totalSum = bookingInfo.rooms.reduce((total, room) => {
+        return total + (room.sum || 0); // Add room sum or 0 if undefined
+      }, 0);
+
+      // Add the calculated total sum to the bookingInfo object
+      bookingInfo.totalSum = totalSum;
+
+      // Return the booking information with the updated total sum
+      res.status(200).json({
+        bookingId: id,
+        bookingInfo,
+      });
     } else {
       res.status(404).json({ msg: "Booking not found" });
-      if (Items) {
-        // Calculate the total sum of all "sum" fields in the "rooms" array for each booking
-        const totalSum = Items.reduce((total, item) => {
-          return (
-            total +
-            item.rooms.reduce(
-              (roomTotal, room) => roomTotal + (room.sum || 0),
-              0
-            )
-          );
-        }, 0);
-
-        // Send response with total booking sum
-        res.status(200).json({
-          bookings: Items,
-          totalBookingSum: totalSum,
-        });
-      }
     }
   } catch (error) {
     res.status(500).json({ msg: error.message });
