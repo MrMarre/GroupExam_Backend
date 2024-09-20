@@ -1,0 +1,199 @@
+{
+	"info": {
+		"_postman_id": "d8715616-799d-4cd8-b8b9-809436e2664e",
+		"name": "Bonzai",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "32658633"
+	},
+	"item": [
+		{
+			"name": "POST NEW rooms",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"room\": \"suite\",\r\n    \"guests\": \"3\",\r\n    \"price\": \"1500\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "/rooms/",
+					"path": [
+						"rooms",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET all rooms",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "/rooms/",
+					"path": [
+						"rooms",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "POST Bookings",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"bookings\": [\r\n    {\r\n      \"roomId\": \"935efd75-5e93-4c9a-8866-9047c2fb18ee\",\r\n      \"epost\": \"hej@hej\",\r\n      \"checkIn\": \"2024-09-20\",\r\n      \"checkOut\": \"2024-09-21\",\r\n      \"clientName\": \"Jens\",\r\n      \"guests\": 1\r\n    },\r\n    {\r\n      \"roomId\": \"2cae7c09-afc3-410e-9a99-9c2d2b19c581\",\r\n      \"epost\": \"hej@hej\",\r\n      \"checkIn\": \"2024-09-20\",\r\n      \"checkOut\": \"2024-09-22\",\r\n      \"clientName\": \"Jens\",\r\n      \"guests\": 3\r\n    },\r\n    {\r\n      \"roomId\": \"ed73d0af-75e1-456b-af75-9106ffc7c37c\",\r\n      \"epost\": \"hej@hej\",\r\n      \"checkIn\": \"2024-09-23\",\r\n      \"checkOut\": \"2024-09-25\",\r\n      \"clientName\": \"Jens\",\r\n      \"guests\": 1\r\n    }\r\n  ]\r\n}\r\n\r\n//du kan lägga till 1 eller flera ordrar via denna",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "/bookings/",
+					"path": [
+						"bookings",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET booking from id",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "/bookings/:id",
+					"path": [
+						"bookings",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": ""
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET all bookings",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "/bookings/",
+					"path": [
+						"bookings",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "DELETE bookings/rooms",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    // \"roomId\": \"ed73d0af-75e1-456b-af75-9106ffc7c37c\"\r\n}\r\n\r\n//Om du inte skickar med roomId så försöker den ta bort hela booking (om alla datum är okej) annars använd roomId för att plocka bort ett specifikt rum inom en booking",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "/bookings/:id",
+					"path": [
+						"bookings",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "a548cc88-cc79-4a2b-9f80-8931214b01fc"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PUT add new room to existing booking",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\"roomId\": \"29758e4a-1d79-42f3-9209-cd272aa36f1e\",\r\n\"guests\": 2,\r\n\"checkIn\": \"2023-09-20\",\r\n\"checkOut\": \"2023-09-26\"\r\n}\r\n\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "/bookings/:id",
+					"path": [
+						"bookings",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "515b32d4-3b89-46ed-baee-b74200a09afb"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PUT change room inside existing booking",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\"roomId\": \"29758e4a-1d79-42f3-9209-cd272aa36f1e\",\r\n\"newRoomId\": \"2e23ae32-fdcb-4e31-afa6-87f48bc1b77c\",\r\n\"guests\": 2,\r\n\"checkIn\": \"2023-09-20\",\r\n\"checkOut\": \"2023-09-26\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "/bookings/:id",
+					"path": [
+						"bookings",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "515b32d4-3b89-46ed-baee-b74200a09afb"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
